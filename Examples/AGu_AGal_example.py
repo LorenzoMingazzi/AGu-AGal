@@ -526,7 +526,7 @@ for (i_t, t) in enumerate(loads):
             mark_en_ref = list(set(mark_en) - set(mark_en_no_ref)) #Refined zone containing the advancing crack tip
 
             if list(mark_en) == list(mark_en_save) and flag_final_ref == 0 and flag_load_ref == 0:
-                print('UGUALE')
+                print('SAME MESH')
 
                 problem_ur = LinearVariationalProblem(lhs(E_dur), rhs(E_dur), ur, bcu_r)
                 solver_ur = LinearVariationalSolver(problem_ur)
@@ -549,7 +549,7 @@ for (i_t, t) in enumerate(loads):
                 pra["snes_solver"]["report"] = True
 
             else:
-                print('DIVERSO')
+                print('NEW ACTIVE ELEMENTS')
                 mark_add_prev_iter = mark_add
                 mark_add = []
                 for el_id in mark_en:
@@ -604,7 +604,7 @@ for (i_t, t) in enumerate(loads):
                     for sub_cicles in range(ref_active):
                         if (list(mark_en_search) != list(mark_search_save) or list(mark_alpha_save_it) != list(mark_alpha_save)) and flag_search == 0 or flag_final_ref  == 1 or flag_prima_cond == 0:
 
-                            print('PRIMA CONDIZIONE')
+                            print('First condition -> Full alpha_s refinement loop')
                             mf_check_mesh_mid = MeshFunction('size_t', mesh_mid_ref, ndim, 0)
                             mf_check_mesh_mid.array()[test_mf_en] = 3
                             mf_check_mesh_mid.array()[test_mf_en_no_ref_mesh] = 1
@@ -694,7 +694,7 @@ for (i_t, t) in enumerate(loads):
                             flag_prima_cond = 1
 
                         else:
-                            print('SECONDA CONDIZIONE')
+                            print('Second condition -> only interpolation')
 
                             V_flag_ref = FunctionSpace(mesh_mid_ref, "DG", 0)
                             f_apply_check = Function(V_flag_ref)
