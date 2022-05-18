@@ -32,8 +32,6 @@ parameters["form_compiler"]["quadrature_degree"] = 4
 # ---Input data
 print("Mesh")
 L = 10.; H = 3.;
-y_bot1 = 0.9999; y_bot2 = 1     #Parametri che modificano l'altezza della zona BOT che si rompe
-y_top1 = 2; y_top2 = 2.0001
 
 # --- Mesh
 mesh_import = meshio.read("dominio_3.msh")
@@ -47,21 +45,16 @@ ndim = mesh.topology().dim()
 File(outputFolder + "/mesh.pvd") << mesh
 
 """
-Struttura layer
 _____________________________________________________________
-|                      zona che danneggia                   |
+|                         Brittle                           |
+|                                                           |         
+|-----------------------------------------------------------|
 |                                                           |
-|--------------------------y_top2---------------------------|
-|                zona transizione resistenza                |
-|--------------------------y_top1---------------------------|
+|                          Core                             |
 |                                                           |
-|                 core che non danneggia                    |
+|-----------------------------------------------------------|
 |                                                           |
-|--------------------------y_bot2---------------------------|
-|                 zona transizione resistenza               |
-|--------------------------y_bot1---------------------------|
-|                                                           |
-|_____________________zona che danneggia____________________|
+|_________________________Brittle___________________________|
 
 """
 
@@ -176,6 +169,9 @@ class Left(SubDomain):
         return near(x[0], 0)
 left = Left()
 
+y_bot1 = 0.9999; y_bot2 = 1
+y_top1 = 2; y_top2 = 2.0001
+
 class R_top(SubDomain):
     def inside(self, x, on_boundary):
         return near(x[0], L) and x[1] >= y_top2
@@ -224,8 +220,6 @@ ds = Measure('ds', domain=mesh, subdomain_data=boundaries)
 print("Boundary Conditions")
 
 u_D = Expression('t', t = 0, degree=0)
-u_R = Expression('t', t = 0, degree=0)
-u_L = Expression('t', t = 0, degree=0)
 
 bcu_l = DirichletBC(V_u.sub(0), Constant(0.), boundaries, 1) # left
 bcu_r = DirichletBC(V_u.sub(0), u_D, boundaries, 3)          # right
@@ -429,15 +423,10 @@ for (i_t, t) in enumerate(loads):
 
     if flag_load == 0:
         u_D.t = t
-        # u_L.t = -0.5 * t
-        # u_R.t = 0.5 * t
         load_save = t
         load_incr = 0
     else:
-        # u_D.t = load_save
         u_D.t = t
-        # u_L.t = -0.5 * t
-        # u_R.t = 0.5 * t
 
     if t == loads[-1]:
         flag_final_ref = 1
@@ -470,7 +459,6 @@ for (i_t, t) in enumerate(loads):
 
         if flag_ma == 0:
             solver_u.solve()
-
             dom_source = MeshFunction('size_t', mesh, 2, 0)
             dom_source.set_all(0)
             core.mark(dom_source, 1)
@@ -528,7 +516,6 @@ for (i_t, t) in enumerate(loads):
                 if flag_final_ref == 0:
                     mark_en_no_ref = np.concatenate((mark_en_oooold, mark_en_ooold, mark_en_oold, mark_en_old), axis = None)
                     mark_en_search = list(set(mark_en_no_ref) - set(mark_en_oooold))
-                    
                 else:
                     mark_en_no_ref = np.concatenate((mark_en_oooold, mark_en_ooold, mark_en_oold, mark_en_old), axis = None)
                     mark_en_search = list(set(mark_en))
@@ -536,21 +523,7 @@ for (i_t, t) in enumerate(loads):
                 mark_en_no_ref = []
                 mark_en_search = []
 
-            mark_en_ref = list(set(mark_en) - set(mark_en_no_ref)) #zona che avanza dove refinisco aggro
-
-            # Aggiungo elemento che c'e di differenza tra il passo attuale e quello precedente per evitare
-            # il caso in cui ho un elemento che viene aggiunto e tolto di continuo
-            # mark_diff_last_iter = list(set(mark_en_prev_iter) - set(mark_en))
-            # if len(mark_diff_last_iter)>0:
-            #     mark_diff_save = list(set(np.concatenate((mark_diff_save, mark_diff_last_iter), axis = None)))
-            # mark_en_ref = np.concatenate((mark_en_ref, mark_diff_save), axis = None)
-
-            source_projected.rename('source','source')
-            mf_plot = MeshFunction('size_t', mesh, 2, 0)
-            mf_plot.array()[mark_en] = 2
-            mark_en_ref_plot = list(map(int, mark_en_ref))
-            mf_plot.array()[mark_en_ref_plot] = 1
-            File_mark << (mf_plot, i_t * 1000 + alternate_iter)
+            mark_en_ref = list(set(mark_en) - set(mark_en_no_ref)) #Refined zone containing the advancing crack tip
 
             if list(mark_en) == list(mark_en_save) and flag_final_ref == 0 and flag_load_ref == 0:
                 print('UGUALE')
@@ -585,13 +558,6 @@ for (i_t, t) in enumerate(loads):
                     pp = [p_x, p_y]
                     mark_add.append(tree.query_ball_point(pp, coeff_mark_en, np.float('inf')))
                 mark_add = list(set(np.concatenate(mark_add)))
-
-                # print(mark_add_diff_save)
-                # mark_add_diff_last_iter = list(set(mark_add_prev_iter) - set(mark_add))
-                # if len(mark_add_diff_last_iter)>0:
-                #     mark_add_diff_save = list(set(np.concatenate((mark_add_diff_save, mark_add_diff_last_iter), axis = None)))
-                # mark_add = np.concatenate((mark_add, mark_add_diff_save), axis = None)
-
                 mark_en_add= np.concatenate([mark_en, mark_add])
 
 #------------------------------------------------------------------------------
@@ -634,7 +600,7 @@ for (i_t, t) in enumerate(loads):
 #----------------------------------------------
 
                 print('alpha_s refine')
-                if len(mark_en_no_ref) > 0: # ho elementi da raffittire specifici nella strisciolina danneggiata
+                if len(mark_en_no_ref) > 0: # Check is true if there are previously damaged elements
                     for sub_cicles in range(ref_active):
                         if (list(mark_en_search) != list(mark_search_save) or list(mark_alpha_save_it) != list(mark_alpha_save)) and flag_search == 0 or flag_final_ref  == 1 or flag_prima_cond == 0:
 
@@ -655,17 +621,17 @@ for (i_t, t) in enumerate(loads):
                                 f_apply_check = Function(V_flag_ref)
                                 f_apply_check.rename('old_ref','old_ref')
                                 LagrangeInterpolator.interpolate(f_apply_check, f_apply)
-                                last_cell_refined = np.concatenate(np.argwhere(f_apply_check.vector() == 1)) #Vecchie celle effettivamente raffittite sulla nuova mesh
+                                last_cell_refined = np.concatenate(np.argwhere(f_apply_check.vector() == 1)) #Old cells actually already refined on the new mesh
 
-                            if len(mark_alpha_to_remove) == 0: #riduco vettore per ricerca elementi danneggiati
+                            if len(mark_alpha_to_remove) == 0: #Reduce the vector to loop containing the damaged elements
                                 mark_alpha_to_check = np.concatenate(mark_alpha)
                             else:
                                 V_alpha_remove = FunctionSpace(mesh1_ref, "DG", 0)
-                                F_alpha_remove = Function(V_alpha_remove) #function definita sulla nuova mesh su cui andare a interpolare i vecchi elementi gia raffittiti
-                                LagrangeInterpolator.interpolate(F_alpha_remove, f_apply) #interpolando marchio gli elementi raffittiti al passo/iterazione precedente
+                                F_alpha_remove = Function(V_alpha_remove) #function defined over the new mesh on which the old already refined elements are interpolated
+                                LagrangeInterpolator.interpolate(F_alpha_remove, f_apply) #mark the elements refined at the previous timestep/iteration via the interpolation
                                 mark_alpha_remove = []
                                 if len(np.argwhere(F_alpha_remove.vector() == 1))>0:
-                                    mark_alpha_remove = np.concatenate(np.argwhere(F_alpha_remove.vector() == 1)) #elementi sulla mesh_ref "nuova" da rimuovere perche gia cercati
+                                    mark_alpha_remove = np.concatenate(np.argwhere(F_alpha_remove.vector() == 1)) #elements on the "new" mesh_ref to remove cuz already checked
                                     mark_alpha_to_check = list(set(np.concatenate(mark_alpha)).difference(set(mark_alpha_remove)))
                                 else:
                                     mark_alpha_to_check = np.concatenate(mark_alpha)
@@ -751,8 +717,8 @@ for (i_t, t) in enumerate(loads):
                 else:
                     mesh1_ref = mesh_mid_ref
                     if flag_load == 1:
-                        flag_load_ref = 0           # ritorna zero per entrare in uguale
-                        flag_already_ref = 1        # setto a 1 per non cambiare piu flag_load_ref a fine passo temporale
+                        flag_load_ref = 0           # Return zero to enter on the "SAME MESH" check
+                        flag_already_ref = 1        # set to 1 to not chenge flag_load_ref at the end of the timestep
 
                 mark_alpha_save_it = mark_alpha
 
@@ -777,11 +743,8 @@ for (i_t, t) in enumerate(loads):
                 bot.mark(boundaries_r, 4)
 
                 bc_l = DirichletBC(V_ur.sub(0), Constant(0.), boundaries_r, 1)
-                # bc_t = DirichletBC(V_ur.sub(1), Constant(0.), boundaries_r, 2)
                 bc_r = DirichletBC(V_ur.sub(0), u_D, boundaries_r, 3)
                 bc_b = DirichletBC(V_ur.sub(1), Constant(0.), boundaries_r, 4)
-                #bcu_mid = DirichletBC(V_ur, Constant((0.,0.)), Node_M, method = 'pointwise') # Mid point
-                # bcu_r = [bc_l, bc_t, bc_r, bc_b]
                 bcu_r = [bc_l, bc_r, bc_b]
 
 #------------------------------------------------------------------------------
@@ -818,11 +781,11 @@ for (i_t, t) in enumerate(loads):
                                       + ell1 * dot(grad(alpha_r), grad(alpha_r))) * dxr(1)
                 total_energy_r = elastic_energy_r + dissipated_energy_r
 
-                # Derivative wrt u3
+                # Derivative wrt ur
                 E_ur = derivative(total_energy_r, ur, vr)
                 E_dur = uf.replace(E_ur, {ur: dur})
 
-                # First and second directional derivative wrt alpha
+                # First and second directional derivative wrt alpha_r
                 E_dar = derivative(total_energy_r, alpha_r, beta_r)
                 E_ddar = derivative(E_dar, alpha_r, dalpha_r)
 
@@ -969,9 +932,9 @@ for (i_t, t) in enumerate(loads):
     postprocessing()
 
     if flag_ma > 0 and max(alpha_r.vector())> 0.999:
-        flag_load = 1                   # blocca il carico
-        if flag_already_ref == 0:        # check che abbia gia fatto il ref post lock carico
-            flag_load_ref = 1           # fa entrare nel refine post blocco carico
+        flag_load = 1                   # flag to save the load for a final check on the mesh
+        if flag_already_ref == 0:        # check that the final refine has been done 
+            flag_load_ref = 1           #  if not -> enter the refine to have a correct refinement
 
     if mpi_rank == 0:
         print("\nEnd of timestep %d with load %g" % (i_t, t))
